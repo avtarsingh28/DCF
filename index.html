@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DCF Valuation Calculator</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 900px;
+        margin: 24px auto;
+        padding: 0 16px;
+        color: #1d1d1d;
+      }
+      h1 {
+        color: #0f4c81;
+      }
+      label {
+        display: block;
+        margin-top: 12px;
+        font-weight: 600;
+      }
+      input {
+        width: 100%;
+        padding: 10px;
+        margin-top: 6px;
+        border: 1px solid #c4c4c4;
+        border-radius: 6px;
+        box-sizing: border-box;
+      }
+      button {
+        margin-top: 16px;
+        padding: 12px 18px;
+        border: none;
+        border-radius: 6px;
+        background: #0f4c81;
+        color: white;
+        font-size: 16px;
+        cursor: pointer;
+      }
+      button:hover {
+        background: #0b3b62;
+      }
+      .card {
+        background: #f7f9fc;
+        border: 1px solid #d9e2ec;
+        border-radius: 12px;
+        padding: 18px;
+        margin-top: 24px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 16px;
+      }
+      th,
+      td {
+        border: 1px solid #d9e2ec;
+        padding: 10px;
+        text-align: center;
+      }
+      th {
+        background: #edf3fb;
+        text-align: center;
+      }
+      .error {
+        color: #a12d2d;
+        margin-top: 16px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>DCF Valuation Calculator</h1>
+    <p>Enter your financial assumptions and generate a discounted cash flow breakdown.</p>
+
+    <form id="dcf-form">
+      <label for="revenue">Revenue</label>
+      <input id="revenue" name="revenue" type="number" step="0.01" min="0" required value="1000000" />
+
+      <label for="growth_rate">Growth Rate (example: 0.10 for 10%)</label>
+      <input id="growth_rate" name="growth_rate" type="number" step="0.001" min="0" required value="0.10" />
+
+      <label for="discount_rate">Discount Rate (example: 0.12 for 12%)</label>
+      <input id="discount_rate" name="discount_rate" type="number" step="0.001" min="0" required value="0.12" />
+
+      <label for="years">Years</label>
+      <input id="years" name="years" type="number" min="1" required value="5" />
+
+      <button type="submit">Calculate</button>
+    </form>
+
+    <div id="output" class="card" style="display: none"></div>
+    <div id="history" class="card" style="display: none"></div>
+    <div id="error-message" class="error"></div>
+
+    <script>
+      const form = document.getElementById("dcf-form");
+      const output = document.getElementById("output");
+      const errorMessage = document.getElementById("error-message");
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        errorMessage.textContent = "";
+        output.style.display = "none";
+
+        const data = {
+          revenue: parseFloat(document.getElementById("revenue").value),
+          growth_rate: parseFloat(document.getElementById("growth_rate").value),
+          discount_rate: parseFloat(document.getElementById("discount_rate").value),
+          years: parseInt(document.getElementById("years").value, 10),
+        };
+
+        try {
+          const response = await fetch("/calculate-dcf", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(data),
+          });
+
+          const result = await response.json();
+
+          if (!response.ok) {
+            throw new Error(result.detail || "Unable to calculate DCF. Please verify your inputs.");
+          }
+
+          renderResult(result);
+          loadHistory();
+        } catch (err) {
+          errorMessage.textContent = err.message;
+        }
+      });
+
+      async function loadHistory() {
+        try {
+          const response = await fetch("/history");
+          const history = await response.json();
+
+          if (!response.ok) {
+            throw new Error("Unable to load history.");
+          }
+
+          renderHistory(history);
+        } catch (err) {
+          console.warn(err.message);
+        }
+      }
+
+      function renderResult(result) {
+        const rows = result.yearly_cash_flows
+          .map(
+            (item) =>
+              `<tr><td>${item.year}</td><td>$${item.projected_cash_flow.toLocaleString()}</td><td>$${item.discounted_cash_flow.toLocaleString()}</td></tr>`
+          )
+          .join("");
+
+        let terminalHtml = "";
+        if (result.terminal_value !== null) {
+          terminalHtml = `
+            <p><strong>Terminal value:</strong> $${result.terminal_value.toLocaleString()}</p>
+            <p><strong>Discounted terminal value:</strong> $${result.discounted_terminal_value.toLocaleString()}</p>
+            <p><strong>Total valuation with terminal:</strong> $${result.total_valuation_with_terminal.toLocaleString()}</p>
+          `;
+        }
+
+        output.innerHTML = `
+          <h2>DCF Details</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Year</th>
+                <th>Projected cash flow</th>
+                <th>Discounted cash flow</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows}
+            </tbody>
+          </table>
+          <p><strong>Final valuation:</strong> $${result.final_valuation.toLocaleString()}</p>
+          ${terminalHtml}
+        `;
+
+        output.style.display = "block";
+      }
+
+      function renderHistory(items) {
+        if (!items || items.length === 0) {
+          document.getElementById("history").style.display = "none";
+          return;
+        }
+
+        const rows = items
+          .map(
+            (item) =>
+              `<tr><td>${item.id}</td><td>$${item.revenue.toLocaleString()}</td><td>${(item.growth_rate * 100).toFixed(1)}%</td><td>${(item.discount_rate * 100).toFixed(1)}%</td><td>${item.years}</td><td>$${item.valuation.toLocaleString()}</td><td>${new Date(item.created_at).toLocaleString()}</td></tr>`
+          )
+          .join("");
+
+        document.getElementById("history").innerHTML = `
+          <h2>Recent Calculations</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Revenue</th>
+                <th>Growth</th>
+                <th>Discount</th>
+                <th>Years</th>
+                <th>Valuation</th>
+                <th>Created</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows}
+            </tbody>
+          </table>
+        `;
+        document.getElementById("history").style.display = "block";
+      }
+
+      loadHistory();
+    </script>
+  </body>
+</html>
