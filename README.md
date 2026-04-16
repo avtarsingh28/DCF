@@ -46,6 +46,8 @@ pip install -r requirements.txt
 
 Copy `.env.example` to `.env` and update values:
 
+DATABASE_URL=postgresql://postgres:password@localhost:5432/dcf_db
+
 ```bash
 cp .env.example .env
 ```
